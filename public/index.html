@@ -279,12 +279,23 @@ let equityChart, sessionChart, donutChart;
 async function checkHealth() {
   try {
     const r = await fetch(`${API}/health`);
+    // Even if fetch succeeds, the function itself may have returned a
+    // non-2xx status (e.g. 500 because DATABASE_URL is missing). Surface
+    // that instead of silently treating any response as healthy.
     const d = await r.json();
+    if (!r.ok || !d.success) {
+      throw new Error(d.message || `HTTP ${r.status}`);
+    }
     document.getElementById('dot').style.background = '#10B981';
     document.getElementById('api-status-text').textContent = `API online · ${d.tradeCount} trades`;
-  } catch {
+  } catch (err) {
     document.getElementById('dot').style.background = '#EF4444';
-    document.getElementById('api-status-text').textContent = 'API offline — start server.js';
+    // Show the real reason instead of a generic, possibly-wrong message —
+    // this is what you'd check in the browser console / on-screen to
+    // figure out what's actually broken (missing DB env var, function
+    // crash, wrong API path, etc).
+    document.getElementById('api-status-text').textContent = `API offline — ${err.message}`;
+    console.error('Health check failed:', err);
   }
 }
 
@@ -303,13 +314,15 @@ function showPage(p, btn) {
 async function loadDashboard() {
   try {
     const r = await fetch(`${API}/stats`);
-    const { stats } = await r.json();
+    const { stats, message } = await r.json();
+    if (!r.ok) throw new Error(message || `HTTP ${r.status}`);
     renderStats(stats);
     renderEquityChart(stats.equityCurve);
     renderSessionChart(stats.bySession);
     renderDonutChart(stats.wins, stats.losses, stats.breakeven);
   } catch(e) {
-    document.getElementById('stats-grid').innerHTML = '<div class="loading">⚠️ Could not load — is the server running?</div>';
+    console.error('loadDashboard failed:', e);
+    document.getElementById('stats-grid').innerHTML = `<div class="loading">⚠️ ${e.message}</div>`;
   }
 }
 
@@ -382,10 +395,12 @@ async function loadTrades() {
   if (pair)     url += `pair=${encodeURIComponent(pair)}&`;
   try {
     const r = await fetch(url);
-    const { trades } = await r.json();
+    const { trades, message } = await r.json();
+    if (!r.ok) throw new Error(message || `HTTP ${r.status}`);
     renderTradeTable(trades);
-  } catch {
-    document.getElementById('trade-tbody').innerHTML = '<tr><td colspan="13" class="loading">⚠️ Could not load trades</td></tr>';
+  } catch (err) {
+    console.error('loadTrades failed:', err);
+    document.getElementById('trade-tbody').innerHTML = `<tr><td colspan="13" class="loading">⚠️ ${err.message}</td></tr>`;
   }
 }
 
@@ -457,7 +472,7 @@ async function submitTrade() {
     ['f-entry','f-sl','f-tp','f-pnl','f-conf','f-notes'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
     checkHealth();
-  } catch { toast('Error saving trade — is server.js running?'); }
+  } catch (err) { toast(`Error saving trade — ${err.message}`); console.error('submitTrade failed:', err); }
   btn.disabled = false; btn.textContent = 'Save Trade';
 }
 
@@ -477,8 +492,9 @@ async function loadAnalytics() {
       <div class="row-item"><span class="row-name">Expectancy</span><span class="row-stat ${stats.expectancy>=0?'up':'down'}">${stats.expectancy>=0?'+':''}${stats.expectancy}R</span></div>
       <div class="row-item"><span class="row-name">Net P&L</span><span class="row-stat ${stats.totalR>=0?'up':'down'}">${stats.totalR>=0?'+':''}${stats.totalR}R</span></div>
     `;
-  } catch {
-    document.getElementById('strategy-list').innerHTML = '<div class="loading">⚠️ Server offline</div>';
+  } catch (err) {
+    console.error('loadAnalytics failed:', err);
+    document.getElementById('strategy-list').innerHTML = `<div class="loading">⚠️ ${err.message}</div>`;
   }
 }
 
