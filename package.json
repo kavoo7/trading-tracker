@@ -1,0 +1,9 @@
+{
+  "name": "smc-trading-journal",
+  "version": "2.0.0",
+  "description": "SMC/ICT Trading Journal — Vercel + Neon Postgres",
+  "private": true,
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.0"
+  }
+}

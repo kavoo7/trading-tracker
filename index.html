@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SMC Trading Journal</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --gold: #F5C842; --red: #EF4444; --green: #10B981; --teal: #2DD4BF;
+      --bg: #0A0E1A; --surface: #111827; --card: #1A2235; --border: #1F2D45;
+      --text: #E8EDF5; --muted: #6B7A99;
+      --font: 'Inter', system-ui, sans-serif; --mono: 'JetBrains Mono', 'Fira Mono', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+    /* ── Layout ── */
+    .app { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 10px; }
+    .logo { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+    .logo span { color: var(--gold); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .api-status { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+
+    /* ── Nav ── */
+    nav { display: flex; gap: 6px; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .tab { padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border); background: transparent;
+           cursor: pointer; font-size: 13px; color: var(--muted); font-family: var(--font); transition: all 0.15s; }
+    .tab.active { background: rgba(245,200,66,0.1); color: var(--gold); border-color: rgba(245,200,66,0.3); }
+    .tab:hover:not(.active) { background: var(--surface); color: var(--text); }
+
+    /* ── Pages ── */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Stats grid ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .stat-value { font-size: 24px; font-weight: 500; font-family: var(--mono); }
+    .up { color: var(--green); } .down { color: var(--red); } .gold { color: var(--gold); }
+
+    /* ── Charts ── */
+    .chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 1.25rem; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .chart-title { font-size: 13px; font-weight: 500; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+
+    /* ── Table ── */
+    .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem; }
+    .table-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .section-title { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-row select { font-size: 12px; padding: 5px 9px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { padding: 9px 14px; text-align: left; font-size: 11px; font-weight: 500; color: var(--muted);
+         text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); background: var(--surface); }
+    td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-family: var(--mono); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; font-family: var(--font); }
+    .badge-win  { background: rgba(16,185,129,0.15); color: #34D399; }
+    .badge-loss { background: rgba(239,68,68,0.12);  color: #F87171; }
+    .badge-be   { background: rgba(107,114,128,0.2); color: var(--muted); }
+    .badge-long  { background: rgba(16,185,129,0.1); color: #34D399; }
+    .badge-short { background: rgba(239,68,68,0.1);  color: #F87171; }
+    .strat-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-family: var(--font); background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+    .del-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 6px; border-radius: 4px; }
+    .del-btn:hover { color: var(--red); background: rgba(239,68,68,0.08); }
+
+    /* ── Form ── */
+    .form-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 1.25rem; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+    input, select, textarea {
+      font-size: 13px; font-family: var(--font); padding: 8px 11px;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); width: 100%; transition: border 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: rgba(245,200,66,0.4); }
+    textarea { resize: vertical; min-height: 75px; }
+    .submit-btn {
+      grid-column: 1 / -1; padding: 10px; border-radius: 8px; border: 1px solid rgba(245,200,66,0.3);
+      background: rgba(245,200,66,0.08); cursor: pointer; font-size: 13px; font-weight: 600;
+      color: var(--gold); font-family: var(--font); transition: all 0.15s; letter-spacing: 0.03em;
+    }
+    .submit-btn:hover { background: rgba(245,200,66,0.15); }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Analytics ── */
+    .analytics-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .row-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .row-item:last-child { border-bottom: none; }
+    .row-name { color: var(--text); font-weight: 500; font-family: var(--font); }
+    .row-stats { display: flex; gap: 14px; }
+    .row-stat { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+    /* ── Toast ── */
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--card); border: 1px solid var(--border);
+             border-radius: 8px; padding: 10px 18px; font-size: 13px; color: var(--text);
+             box-shadow: 0 8px 32px rgba(0,0,0,0.4); display: none; z-index: 999; }
+
+    /* ── Loading ── */
+    .loading { text-align: center; padding: 2.5rem; color: var(--muted); font-size: 13px; }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border);
+               border-top-color: var(--gold); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .two-col { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">SMC <span>Trading Journal</span></div>
+    <div class="api-status"><span class="status-dot" id="dot"></span><span id="api-status-text">Connecting...</span></div>
+  </header>
+
+  <nav>
+    <button class="tab active" onclick="showPage('dashboard',this)">Dashboard</button>
+    <button class="tab" onclick="showPage('log',this)">Trade Log</button>
+    <button class="tab" onclick="showPage('add',this)">+ Add Trade</button>
+    <button class="tab" onclick="showPage('analytics',this)">Analytics</button>
+  </nav>
+
+  <!-- ── DASHBOARD ── -->
+  <div id="page-dashboard" class="page active">
+    <div class="stats-grid" id="stats-grid"><div class="loading"><span class="spinner"></span>Loading stats...</div></div>
+    <div class="chart-wrap">
+      <div class="chart-header"><span class="chart-title">Equity Curve</span></div>
+      <div style="position:relative;height:220px;"><canvas id="equityChart"></canvas></div>
+    </div>
+    <div class="two-col">
+      <div class="chart-wrap" style="margin-bottom:0">
+        <div class="chart-header"><span class="chart-title">P&L by Session</span></div>
+        <div style="position:relative;height:170px;"><canvas id="sessionChart"></canvas></div>
+      </div>
+      <div class="chart-wrap" style="margin-bottom:0">
+        <div class="chart-header"><span class="chart-title">Outcome Distribution</span></div>
+        <div style="position:relative;height:170px;"><canvas id="donutChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TRADE LOG ── -->
+  <div id="page-log" class="page">
+    <div class="table-wrap">
+      <div class="table-header">
+        <span class="section-title">Trade Log</span>
+        <div class="filter-row">
+          <select id="filter-outcome" onchange="loadTrades()">
+            <option value="">All outcomes</option>
+            <option value="Win">Wins</option>
+            <option value="Loss">Losses</option>
+            <option value="BE">Breakeven</option>
+          </select>
+          <select id="filter-strategy" onchange="loadTrades()">
+            <option value="">All strategies</option>
+            <option>FVG + OB</option><option>SSL Sweep + FVG</option><option>Order Block</option>
+            <option>FVG Retest</option><option>ICT Breaker</option><option>SMT Divergence</option>
+            <option>Judas Swing</option><option>CISD</option><option>NWOG/NDOG</option>
+          </select>
+          <select id="filter-pair" onchange="loadTrades()">
+            <option value="">All pairs</option>
+            <option>XAU/USD</option><option>EUR/USD</option><option>GBP/USD</option>
+            <option>NAS100</option><option>US30</option><option>USD/JPY</option>
+          </select>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th><th>Pair</th><th>Dir</th><th>Strategy</th>
+              <th>Entry</th><th>SL</th><th>TP</th><th>R:R</th>
+              <th>P&L</th><th>Outcome</th><th>Session</th><th>TF</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="trade-tbody"><tr><td colspan="13" class="loading"><span class="spinner"></span>Loading trades...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ADD TRADE ── -->
+  <div id="page-add" class="page">
+    <div class="form-card">
+      <p class="section-title" style="margin-bottom:16px;">Log a Trade</p>
+      <div class="form-grid">
+        <div class="form-group"><label>Date</label><input type="date" id="f-date"></div>
+        <div class="form-group"><label>Pair / Instrument</label>
+          <select id="f-pair">
+            <option>XAU/USD</option><option>EUR/USD</option><option>GBP/USD</option>
+            <option>NAS100</option><option>US30</option><option>USD/JPY</option><option>GBP/JPY</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Direction</label>
+          <select id="f-dir"><option>Long</option><option>Short</option></select>
+        </div>
+        <div class="form-group"><label>Session</label>
+          <select id="f-session"><option>London</option><option>New York</option><option>Asia</option><option>NY AM</option><option>NY PM</option></select>
+        </div>
+        <div class="form-group"><label>Strategy / Setup</label>
+          <select id="f-strategy">
+            <option>FVG + OB</option><option>SSL Sweep + FVG</option><option>BSL Sweep</option>
+            <option>Order Block</option><option>FVG Retest</option><option>ICT Breaker</option>
+            <option>NWOG/NDOG</option><option>Judas Swing</option><option>SMT Divergence</option>
+            <option>CISD</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Timeframe</label>
+          <select id="f-tf"><option>1M</option><option>5M</option><option>15M</option><option>1H</option><option>4H</option><option>D</option></select>
+        </div>
+        <div class="form-group"><label>Entry Price</label><input type="number" step="0.01" id="f-entry" placeholder="e.g. 2345.50"></div>
+        <div class="form-group"><label>Stop Loss</label><input type="number" step="0.01" id="f-sl" placeholder="e.g. 2338.00"></div>
+        <div class="form-group"><label>Take Profit</label><input type="number" step="0.01" id="f-tp" placeholder="e.g. 2360.00"></div>
+        <div class="form-group"><label>Outcome</label>
+          <select id="f-outcome"><option>Win</option><option>Loss</option><option>BE</option></select>
+        </div>
+        <div class="form-group"><label>P&L (R multiples)</label>
+          <input type="number" step="0.1" id="f-pnl" placeholder="e.g. 2.5 or -1">
+        </div>
+        <div class="form-group"><label>Confluences</label>
+          <input type="text" id="f-conf" placeholder="HTF OB, SSL swept, FVG below...">
+        </div>
+        <div class="form-group full"><label>Notes / Mistakes / Lesson</label>
+          <textarea id="f-notes" placeholder="What did you see? What did you miss? What would you do differently?"></textarea>
+        </div>
+        <button class="submit-btn full" id="submit-btn" onclick="submitTrade()">Save Trade</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ANALYTICS ── -->
+  <div id="page-analytics" class="page">
+    <div class="two-col">
+      <div class="analytics-card">
+        <p class="section-title" style="margin-bottom:12px;">Strategy Breakdown</p>
+        <div id="strategy-list"><div class="loading"><span class="spinner"></span></div></div>
+      </div>
+      <div class="analytics-card">
+        <p class="section-title" style="margin-bottom:12px;">Best Pairs</p>
+        <div id="pair-list"><div class="loading"><span class="spinner"></span></div></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="analytics-card">
+        <p class="section-title" style="margin-bottom:12px;">Session Performance</p>
+        <div id="session-list"><div class="loading"><span class="spinner"></span></div></div>
+      </div>
+      <div class="analytics-card">
+        <p class="section-title" style="margin-bottom:12px;">Key Metrics</p>
+        <div id="metrics-list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// Relative path — works automatically on Vercel (same domain serves both
+// the frontend and /api/* functions) and also works if you ever run this
+// locally with `vercel dev`. No hardcoded port/host needed anymore.
+const API = '/api';
+let equityChart, sessionChart, donutChart;
+
+// ── API health check ──────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    const d = await r.json();
+    document.getElementById('dot').style.background = '#10B981';
+    document.getElementById('api-status-text').textContent = `API online · ${d.tradeCount} trades`;
+  } catch {
+    document.getElementById('dot').style.background = '#EF4444';
+    document.getElementById('api-status-text').textContent = 'API offline — start server.js';
+  }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showPage(p, btn) {
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('page-'+p).classList.add('active');
+  btn.classList.add('active');
+  if (p==='dashboard') loadDashboard();
+  if (p==='log') loadTrades();
+  if (p==='analytics') loadAnalytics();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const r = await fetch(`${API}/stats`);
+    const { stats } = await r.json();
+    renderStats(stats);
+    renderEquityChart(stats.equityCurve);
+    renderSessionChart(stats.bySession);
+    renderDonutChart(stats.wins, stats.losses, stats.breakeven);
+  } catch(e) {
+    document.getElementById('stats-grid').innerHTML = '<div class="loading">⚠️ Could not load — is the server running?</div>';
+  }
+}
+
+function renderStats(s) {
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Net P&L</div><div class="stat-value ${s.totalR>=0?'up':'down'}">${s.totalR>=0?'+':''}${s.totalR}R</div></div>
+    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value gold">${s.winRate}%</div></div>
+    <div class="stat-card"><div class="stat-label">Avg R:R</div><div class="stat-value">${s.riskRewardRatio}</div></div>
+    <div class="stat-card"><div class="stat-label">Expectancy</div><div class="stat-value ${s.expectancy>=0?'up':'down'}">${s.expectancy>=0?'+':''}${s.expectancy}R</div></div>
+    <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value">${s.totalTrades}</div></div>
+    <div class="stat-card"><div class="stat-label">Wins / Losses</div><div class="stat-value"><span class="up">${s.wins}</span> / <span class="down">${s.losses}</span></div></div>
+  `;
+}
+
+function renderEquityChart(curve) {
+  if (equityChart) equityChart.destroy();
+  const labels = ['Start', ...curve.map(p => p.date.slice(5))];
+  const data = [0, ...curve.map(p => p.cumR)];
+  const ptColors = ['#10B981', ...curve.map(p => p.outcome==='Win'?'#10B981':p.outcome==='Loss'?'#EF4444':'#6B7280')];
+  const ctx = document.getElementById('equityChart').getContext('2d');
+  equityChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{ label:'Equity (R)', data, borderColor:'#F5C842', borderWidth:2,
+      pointRadius:4, pointBackgroundColor:ptColors, tension:0.3, fill:true,
+      backgroundColor:'rgba(245,200,66,0.06)' }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ x:{ticks:{color:'#6B7A99',font:{size:10}}}, y:{ticks:{color:'#6B7A99',font:{size:10},callback:v=>v+'R'}} }
+    }
+  });
+}
+
+function renderSessionChart(bySession) {
+  if (sessionChart) sessionChart.destroy();
+  const labels = Object.keys(bySession);
+  const data = labels.map(k => parseFloat(bySession[k].totalR.toFixed(2)));
+  const ctx = document.getElementById('sessionChart').getContext('2d');
+  sessionChart = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'P&L (R)', data,
+      backgroundColor: data.map(v=>v>=0?'rgba(16,185,129,0.65)':'rgba(239,68,68,0.65)'), borderRadius:4 }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#6B7A99',font:{size:10}}}, y:{ticks:{color:'#6B7A99',font:{size:10},callback:v=>v+'R'}}}
+    }
+  });
+}
+
+function renderDonutChart(wins, losses, be) {
+  if (donutChart) donutChart.destroy();
+  const ctx = document.getElementById('donutChart').getContext('2d');
+  donutChart = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels:['Win','Loss','BE'], datasets:[{ data:[wins,losses,be],
+      backgroundColor:['#10B981','#EF4444','#6B7280'], borderWidth:0 }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'right', labels:{ color:'#6B7A99', font:{size:11}, boxWidth:10 } } }, cutout:'62%'
+    }
+  });
+}
+
+// ── Trade Log ─────────────────────────────────────────────────────────────────
+async function loadTrades() {
+  const outcome  = document.getElementById('filter-outcome')?.value || '';
+  const strategy = document.getElementById('filter-strategy')?.value || '';
+  const pair     = document.getElementById('filter-pair')?.value || '';
+  let url = `${API}/trades?`;
+  if (outcome)  url += `outcome=${encodeURIComponent(outcome)}&`;
+  if (strategy) url += `strategy=${encodeURIComponent(strategy)}&`;
+  if (pair)     url += `pair=${encodeURIComponent(pair)}&`;
+  try {
+    const r = await fetch(url);
+    const { trades } = await r.json();
+    renderTradeTable(trades);
+  } catch {
+    document.getElementById('trade-tbody').innerHTML = '<tr><td colspan="13" class="loading">⚠️ Could not load trades</td></tr>';
+  }
+}
+
+function calcRR(t) {
+  if (!t.entry || !t.sl || !t.tp) return '-';
+  const risk = Math.abs(t.entry - t.sl);
+  const reward = Math.abs(t.tp - t.entry);
+  return risk ? (reward/risk).toFixed(1)+'R' : '-';
+}
+
+function renderTradeTable(trades) {
+  const tbody = document.getElementById('trade-tbody');
+  if (!trades.length) { tbody.innerHTML = '<tr><td colspan="13" class="loading">No trades found</td></tr>'; return; }
+  tbody.innerHTML = trades.map(t => `
+    <tr>
+      <td>${t.date}</td>
+      <td style="font-weight:500;color:var(--text);font-family:var(--font)">${t.pair}</td>
+      <td><span class="badge badge-${t.dir==='Long'?'long':'short'}">${t.dir}</span></td>
+      <td><span class="strat-badge">${t.strategy}</span></td>
+      <td>${t.entry||'—'}</td>
+      <td>${t.sl||'—'}</td>
+      <td>${t.tp||'—'}</td>
+      <td>${calcRR(t)}</td>
+      <td style="color:${parseFloat(t.pnl)>0?'#10B981':parseFloat(t.pnl)<0?'#EF4444':'var(--muted)'};font-weight:500">
+        ${parseFloat(t.pnl)>0?'+':''}${t.pnl}R
+      </td>
+      <td><span class="badge badge-${t.outcome==='Win'?'win':t.outcome==='Loss'?'loss':'be'}">${t.outcome}</span></td>
+      <td style="font-family:var(--font)">${t.session}</td>
+      <td>${t.tf}</td>
+      <td><button class="del-btn" onclick="deleteTrade('${t.id}')">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+async function deleteTrade(id) {
+  if (!confirm('Delete this trade?')) return;
+  await fetch(`${API}/trades/${id}`, { method: 'DELETE' });
+  loadTrades();
+  toast('Trade deleted');
+  checkHealth();
+}
+
+// ── Add Trade ─────────────────────────────────────────────────────────────────
+async function submitTrade() {
+  const btn = document.getElementById('submit-btn');
+  const body = {
+    date:     document.getElementById('f-date').value,
+    pair:     document.getElementById('f-pair').value,
+    dir:      document.getElementById('f-dir').value,
+    session:  document.getElementById('f-session').value,
+    strategy: document.getElementById('f-strategy').value,
+    tf:       document.getElementById('f-tf').value,
+    entry:    document.getElementById('f-entry').value,
+    sl:       document.getElementById('f-sl').value,
+    tp:       document.getElementById('f-tp').value,
+    outcome:  document.getElementById('f-outcome').value,
+    pnl:      document.getElementById('f-pnl').value,
+    conf:     document.getElementById('f-conf').value,
+    notes:    document.getElementById('f-notes').value,
+  };
+  if (!body.date || !body.pair) { toast('Date and pair are required'); return; }
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const r = await fetch(`${API}/trades`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error();
+    toast('Trade saved ✓');
+    ['f-entry','f-sl','f-tp','f-pnl','f-conf','f-notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+    checkHealth();
+  } catch { toast('Error saving trade — is server.js running?'); }
+  btn.disabled = false; btn.textContent = 'Save Trade';
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+async function loadAnalytics() {
+  try {
+    const r = await fetch(`${API}/stats`);
+    const { stats } = await r.json();
+    renderBreakdown('strategy-list', stats.byStrategy);
+    renderBreakdown('pair-list', stats.byPair);
+    renderBreakdown('session-list', stats.bySession);
+    document.getElementById('metrics-list').innerHTML = `
+      <div class="row-item"><span class="row-name">Win Rate</span><span class="row-stat gold">${stats.winRate}%</span></div>
+      <div class="row-item"><span class="row-name">Avg Win</span><span class="row-stat up">+${stats.avgWin}R</span></div>
+      <div class="row-item"><span class="row-name">Avg Loss</span><span class="row-stat down">-${stats.avgLoss}R</span></div>
+      <div class="row-item"><span class="row-name">Risk/Reward</span><span class="row-stat">${stats.riskRewardRatio}</span></div>
+      <div class="row-item"><span class="row-name">Expectancy</span><span class="row-stat ${stats.expectancy>=0?'up':'down'}">${stats.expectancy>=0?'+':''}${stats.expectancy}R</span></div>
+      <div class="row-item"><span class="row-name">Net P&L</span><span class="row-stat ${stats.totalR>=0?'up':'down'}">${stats.totalR>=0?'+':''}${stats.totalR}R</span></div>
+    `;
+  } catch {
+    document.getElementById('strategy-list').innerHTML = '<div class="loading">⚠️ Server offline</div>';
+  }
+}
+
+function renderBreakdown(containerId, obj) {
+  const el = document.getElementById(containerId);
+  const sorted = Object.entries(obj).sort((a,b) => b[1].totalR - a[1].totalR);
+  if (!sorted.length) { el.innerHTML = '<div class="loading">No data yet</div>'; return; }
+  el.innerHTML = sorted.map(([k,v]) => {
+    const wr = v.count ? Math.round(v.wins/v.count*100) : 0;
+    const r = parseFloat(v.totalR.toFixed(1));
+    return `<div class="row-item">
+      <span class="row-name">${k}</span>
+      <div class="row-stats">
+        <span class="row-stat">${wr}% WR</span>
+        <span class="row-stat ${r>=0?'up':'down'}">${r>=0?'+':''}${r}R</span>
+        <span class="row-stat">${v.count}T</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 2500);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+checkHealth();
+loadDashboard();
+</script>
+</body>
+</html>
