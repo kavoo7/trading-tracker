@@ -5,10 +5,12 @@
 // HTTP method sent to /api/trades and branches on req.method.
 
 const { sql, ensureSchema, setCors } = require('./_db');
+const { requireAuth } = require('./_auth');
 
 module.exports = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!requireAuth(req, res)) return; // requireAuth already sent the 401 response
 
   try {
     await ensureSchema();

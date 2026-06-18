@@ -15,6 +15,36 @@
     }
     body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
 
+    /* ── Login screen ── */
+    #login-screen {
+      position: fixed; inset: 0; background: var(--bg); display: flex;
+      align-items: center; justify-content: center; z-index: 1000;
+    }
+    #login-screen.hidden { display: none; }
+    .login-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 32px 28px; width: 100%; max-width: 320px; text-align: center;
+    }
+    .login-logo { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+    .login-logo span { color: var(--gold); }
+    .login-sub { font-size: 12px; color: var(--muted); margin-bottom: 22px; }
+    .login-card input {
+      font-size: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); width: 100%; margin-bottom: 12px; text-align: center;
+    }
+    .login-card input:focus { outline: none; border-color: rgba(245,200,66,0.4); }
+    .login-btn {
+      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(245,200,66,0.3);
+      background: rgba(245,200,66,0.08); cursor: pointer; font-size: 13px; font-weight: 600;
+      color: var(--gold); font-family: var(--font); transition: all 0.15s;
+    }
+    .login-btn:hover { background: rgba(245,200,66,0.15); }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .login-error { font-size: 12px; color: var(--red); margin-top: 12px; min-height: 14px; }
+    #app-root.hidden { display: none; }
+    .logout-link { font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline; margin-left: 10px; }
+    .logout-link:hover { color: var(--text); }
+
     /* ── Layout ── */
     .app { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem; }
     header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 10px; }
@@ -119,11 +149,25 @@
   </style>
 </head>
 <body>
-<div class="app">
+
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">SMC <span>Trading Journal</span></div>
+    <div class="login-sub">Enter password to continue</div>
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+    <button class="login-btn" id="login-btn" onclick="doLogin()">Unlock</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div class="app hidden" id="app-root">
 
   <header>
     <div class="logo">SMC <span>Trading Journal</span></div>
-    <div class="api-status"><span class="status-dot" id="dot"></span><span id="api-status-text">Connecting...</span></div>
+    <div class="api-status">
+      <span class="status-dot" id="dot"></span><span id="api-status-text">Connecting...</span>
+      <span class="logout-link" onclick="doLogout()">log out</span>
+    </div>
   </header>
 
   <nav>
@@ -275,6 +319,59 @@
 const API = '/api';
 let equityChart, sessionChart, donutChart;
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+// Token lives in memory + sessionStorage (NOT localStorage). sessionStorage
+// clears when the tab/browser closes, which is a reasonable middle ground
+// for a personal journal: you don't have to log in on every page refresh
+// within the same session, but closing the browser requires re-entering
+// the password. Note: artifacts can't use browser storage, but this is a
+// real deployed site (not an artifact preview), so sessionStorage works here.
+let authToken = sessionStorage.getItem('journal_token') || null;
+
+function authHeaders() {
+  return authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+}
+
+async function doLogin() {
+  const pw = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!pw) { errEl.textContent = 'Enter a password'; return; }
+  btn.disabled = true; btn.textContent = 'Checking...';
+  try {
+    const r = await fetch(`${API}/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.message || 'Login failed');
+    authToken = d.token;
+    sessionStorage.setItem('journal_token', authToken);
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app-root').classList.remove('hidden');
+    document.getElementById('login-password').value = '';
+    checkHealth();
+    loadDashboard();
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+  btn.disabled = false; btn.textContent = 'Unlock';
+}
+
+function doLogout() {
+  authToken = null;
+  sessionStorage.removeItem('journal_token');
+  document.getElementById('app-root').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+}
+
+// Allow pressing Enter in the password field instead of requiring a click
+document.addEventListener('DOMContentLoaded', () => {
+  const pwField = document.getElementById('login-password');
+  if (pwField) pwField.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+});
+
 // ── API health check ──────────────────────────────────────────────────────────
 async function checkHealth() {
   try {
@@ -313,7 +410,7 @@ function showPage(p, btn) {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 async function loadDashboard() {
   try {
-    const r = await fetch(`${API}/stats`);
+    const r = await fetch(`${API}/stats`, { headers: authHeaders() });
     const { stats, message } = await r.json();
     if (!r.ok) throw new Error(message || `HTTP ${r.status}`);
     renderStats(stats);
@@ -394,7 +491,7 @@ async function loadTrades() {
   if (strategy) url += `strategy=${encodeURIComponent(strategy)}&`;
   if (pair)     url += `pair=${encodeURIComponent(pair)}&`;
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { headers: authHeaders() });
     const { trades, message } = await r.json();
     if (!r.ok) throw new Error(message || `HTTP ${r.status}`);
     renderTradeTable(trades);
@@ -437,7 +534,7 @@ function renderTradeTable(trades) {
 
 async function deleteTrade(id) {
   if (!confirm('Delete this trade?')) return;
-  await fetch(`${API}/trades/${id}`, { method: 'DELETE' });
+  await fetch(`${API}/trades/${id}`, { method: 'DELETE', headers: authHeaders() });
   loadTrades();
   toast('Trade deleted');
   checkHealth();
@@ -465,9 +562,12 @@ async function submitTrade() {
   btn.disabled = true; btn.textContent = 'Saving...';
   try {
     const r = await fetch(`${API}/trades`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', ...authHeaders() },
+      body: JSON.stringify(body)
     });
-    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.message || `HTTP ${r.status}`);
     toast('Trade saved ✓');
     ['f-entry','f-sl','f-tp','f-pnl','f-conf','f-notes'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
@@ -479,8 +579,9 @@ async function submitTrade() {
 // ── Analytics ─────────────────────────────────────────────────────────────────
 async function loadAnalytics() {
   try {
-    const r = await fetch(`${API}/stats`);
-    const { stats } = await r.json();
+    const r = await fetch(`${API}/stats`, { headers: authHeaders() });
+    const { stats, message } = await r.json();
+    if (!r.ok) throw new Error(message || `HTTP ${r.status}`);
     renderBreakdown('strategy-list', stats.byStrategy);
     renderBreakdown('pair-list', stats.byPair);
     renderBreakdown('session-list', stats.bySession);
@@ -525,8 +626,19 @@ function toast(msg) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
-checkHealth();
-loadDashboard();
+
+// If a token already exists from earlier in this browser session, skip the
+// login screen and go straight into the app. If the token has actually
+// expired server-side, the first authenticated fetch will get a 401 and
+// the user will see that as an error message — a full "kick back to
+// login automatically on 401" flow is a reasonable future improvement,
+// but isn't necessary for personal single-user use.
+if (authToken) {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-root').classList.remove('hidden');
+  checkHealth();
+  loadDashboard();
+}
 </script>
 </body>
 </html>

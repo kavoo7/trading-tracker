@@ -1,9 +1,11 @@
 // api/stats.js
 const { sql, ensureSchema, setCors } = require('./_db');
+const { requireAuth } = require('./_auth');
 
 module.exports = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!requireAuth(req, res)) return;
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET, OPTIONS');
     return res.status(405).json({ success: false, message: `Method ${req.method} not allowed` });

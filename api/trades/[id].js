@@ -4,10 +4,12 @@
 // the user requests at that position in the URL into req.query.id.
 
 const { sql, ensureSchema, setCors } = require('../_db');
+const { requireAuth } = require('../_auth');
 
 module.exports = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!requireAuth(req, res)) return;
 
   const { id } = req.query;
 

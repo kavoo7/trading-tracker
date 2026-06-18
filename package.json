@@ -4,6 +4,7 @@
   "description": "SMC/ICT Trading Journal — Vercel + Neon Postgres",
   "private": true,
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.0"
+    "@neondatabase/serverless": "^0.10.0",
+    "jsonwebtoken": "^9.0.3"
   }
 }
