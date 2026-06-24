@@ -27,13 +27,14 @@ module.exports = async (req, res) => {
       if (!existing.length) return res.status(404).json({ success: false, message: 'Trade not found' });
 
       const merged = { ...existing[0], ...req.body };
+      const mistakeList = Array.isArray(merged.mistakes) ? merged.mistakes : [];
       const [trade] = await sql`
         UPDATE trades SET
           date = ${merged.date}, pair = ${merged.pair}, dir = ${merged.dir},
           session = ${merged.session}, strategy = ${merged.strategy}, tf = ${merged.tf},
           entry = ${merged.entry}, sl = ${merged.sl}, tp = ${merged.tp},
           outcome = ${merged.outcome}, pnl = ${merged.pnl},
-          conf = ${merged.conf}, notes = ${merged.notes}
+          conf = ${merged.conf}, notes = ${merged.notes}, mistakes = ${mistakeList}
         WHERE id = ${id}
         RETURNING *
       `;

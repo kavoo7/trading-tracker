@@ -97,6 +97,11 @@
     .badge-long  { background: rgba(16,185,129,0.1); color: #34D399; }
     .badge-short { background: rgba(239,68,68,0.1);  color: #F87171; }
     .strat-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-family: var(--font); background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+    .mistake-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-family: var(--font); background: rgba(239,68,68,0.1); color: #F87171; border: 1px solid rgba(239,68,68,0.25); margin: 1px 3px 1px 0; }
+    .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .checkbox-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-weight: 400; text-transform: none; letter-spacing: 0; cursor: pointer; padding: 6px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); }
+    .checkbox-item:hover { border-color: rgba(239,68,68,0.3); }
+    .checkbox-item input { width: auto; margin: 0; accent-color: var(--red); }
     .del-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 6px; border-radius: 4px; }
     .del-btn:hover { color: var(--red); background: rgba(239,68,68,0.08); }
 
@@ -227,10 +232,10 @@
             <tr>
               <th>Date</th><th>Pair</th><th>Dir</th><th>Strategy</th>
               <th>Entry</th><th>SL</th><th>TP</th><th>R:R</th>
-              <th>P&L</th><th>Outcome</th><th>Session</th><th>TF</th><th></th>
+              <th>P&L</th><th>Outcome</th><th>Session</th><th>TF</th><th>Mistakes</th><th></th>
             </tr>
           </thead>
-          <tbody id="trade-tbody"><tr><td colspan="13" class="loading"><span class="spinner"></span>Loading trades...</td></tr></tbody>
+          <tbody id="trade-tbody"><tr><td colspan="14" class="loading"><span class="spinner"></span>Loading trades...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -277,8 +282,23 @@
         <div class="form-group"><label>Confluences</label>
           <input type="text" id="f-conf" placeholder="HTF OB, SSL swept, FVG below...">
         </div>
-        <div class="form-group full"><label>Notes / Mistakes / Lesson</label>
-          <textarea id="f-notes" placeholder="What did you see? What did you miss? What would you do differently?"></textarea>
+        <div class="form-group full">
+          <label>Mistakes (leave blank for a clean trade)</label>
+          <div class="checkbox-grid" id="mistake-checkboxes">
+            <label class="checkbox-item"><input type="checkbox" value="Revenge trade"> Revenge trade</label>
+            <label class="checkbox-item"><input type="checkbox" value="Ignored HTF bias"> Ignored HTF bias</label>
+            <label class="checkbox-item"><input type="checkbox" value="Moved SL"> Moved SL</label>
+            <label class="checkbox-item"><input type="checkbox" value="FOMO entry"> FOMO entry</label>
+            <label class="checkbox-item"><input type="checkbox" value="No confluence"> No confluence</label>
+            <label class="checkbox-item"><input type="checkbox" value="Oversized position"> Oversized position</label>
+            <label class="checkbox-item"><input type="checkbox" value="Entered too early"> Entered too early</label>
+            <label class="checkbox-item"><input type="checkbox" value="Entered too late"> Entered too late</label>
+            <label class="checkbox-item"><input type="checkbox" value="Ignored news/event"> Ignored news/event</label>
+            <label class="checkbox-item"><input type="checkbox" value="Overtrading"> Overtrading</label>
+          </div>
+        </div>
+        <div class="form-group full"><label>Notes / Lesson</label>
+          <textarea id="f-notes" placeholder="What did you see? What would you do differently?"></textarea>
         </div>
         <button class="submit-btn full" id="submit-btn" onclick="submitTrade()">Save Trade</button>
       </div>
@@ -306,6 +326,11 @@
         <p class="section-title" style="margin-bottom:12px;">Key Metrics</p>
         <div id="metrics-list"></div>
       </div>
+    </div>
+    <div class="analytics-card" style="margin-bottom:1.25rem;">
+      <p class="section-title" style="margin-bottom:4px;">Cost by Mistake</p>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:12px;">What each habit has actually cost you — worst first. A trade with multiple tags counts toward each.</p>
+      <div id="mistake-list"></div>
     </div>
   </div>
 
@@ -497,7 +522,7 @@ async function loadTrades() {
     renderTradeTable(trades);
   } catch (err) {
     console.error('loadTrades failed:', err);
-    document.getElementById('trade-tbody').innerHTML = `<tr><td colspan="13" class="loading">⚠️ ${err.message}</td></tr>`;
+    document.getElementById('trade-tbody').innerHTML = `<tr><td colspan="14" class="loading">⚠️ ${err.message}</td></tr>`;
   }
 }
 
@@ -510,8 +535,13 @@ function calcRR(t) {
 
 function renderTradeTable(trades) {
   const tbody = document.getElementById('trade-tbody');
-  if (!trades.length) { tbody.innerHTML = '<tr><td colspan="13" class="loading">No trades found</td></tr>'; return; }
-  tbody.innerHTML = trades.map(t => `
+  if (!trades.length) { tbody.innerHTML = '<tr><td colspan="14" class="loading">No trades found</td></tr>'; return; }
+  tbody.innerHTML = trades.map(t => {
+    const mistakeTags = Array.isArray(t.mistakes) ? t.mistakes : [];
+    const mistakesHtml = mistakeTags.length
+      ? mistakeTags.map(m => `<span class="mistake-badge">${m}</span>`).join('')
+      : '<span style="color:var(--muted);font-family:var(--font)">—</span>';
+    return `
     <tr>
       <td>${t.date}</td>
       <td style="font-weight:500;color:var(--text);font-family:var(--font)">${t.pair}</td>
@@ -527,9 +557,11 @@ function renderTradeTable(trades) {
       <td><span class="badge badge-${t.outcome==='Win'?'win':t.outcome==='Loss'?'loss':'be'}">${t.outcome}</span></td>
       <td style="font-family:var(--font)">${t.session}</td>
       <td>${t.tf}</td>
+      <td style="max-width:220px;">${mistakesHtml}</td>
       <td><button class="del-btn" onclick="deleteTrade('${t.id}')">✕</button></td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 async function deleteTrade(id) {
@@ -543,6 +575,9 @@ async function deleteTrade(id) {
 // ── Add Trade ─────────────────────────────────────────────────────────────────
 async function submitTrade() {
   const btn = document.getElementById('submit-btn');
+  const mistakes = Array.from(
+    document.querySelectorAll('#mistake-checkboxes input:checked')
+  ).map(cb => cb.value);
   const body = {
     date:     document.getElementById('f-date').value,
     pair:     document.getElementById('f-pair').value,
@@ -557,6 +592,7 @@ async function submitTrade() {
     pnl:      document.getElementById('f-pnl').value,
     conf:     document.getElementById('f-conf').value,
     notes:    document.getElementById('f-notes').value,
+    mistakes,
   };
   if (!body.date || !body.pair) { toast('Date and pair are required'); return; }
   btn.disabled = true; btn.textContent = 'Saving...';
@@ -570,6 +606,7 @@ async function submitTrade() {
     if (!r.ok || !d.success) throw new Error(d.message || `HTTP ${r.status}`);
     toast('Trade saved ✓');
     ['f-entry','f-sl','f-tp','f-pnl','f-conf','f-notes'].forEach(id => document.getElementById(id).value = '');
+    document.querySelectorAll('#mistake-checkboxes input:checked').forEach(cb => cb.checked = false);
     document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
     checkHealth();
   } catch (err) { toast(`Error saving trade — ${err.message}`); console.error('submitTrade failed:', err); }
@@ -585,6 +622,7 @@ async function loadAnalytics() {
     renderBreakdown('strategy-list', stats.byStrategy);
     renderBreakdown('pair-list', stats.byPair);
     renderBreakdown('session-list', stats.bySession);
+    renderMistakeList(stats.byMistake, stats.cleanTrades, stats.totalTrades);
     document.getElementById('metrics-list').innerHTML = `
       <div class="row-item"><span class="row-name">Win Rate</span><span class="row-stat gold">${stats.winRate}%</span></div>
       <div class="row-item"><span class="row-name">Avg Win</span><span class="row-stat up">+${stats.avgWin}R</span></div>
@@ -615,6 +653,37 @@ function renderBreakdown(containerId, obj) {
       </div>
     </div>`;
   }).join('');
+}
+
+// Mistakes get their own renderer (not renderBreakdown) because the data
+// shape is different: byMistake entries only have {count, totalR} — there's
+// no win/loss split, since "Revenge trade" isn't an outcome, it's a label
+// that can attach to a winning or losing trade either way. Sorted most
+// costly first (most negative totalR) so the worst habit is immediately
+// visible at the top — that's the one to fix first.
+function renderMistakeList(byMistake, cleanTrades, totalTrades) {
+  const el = document.getElementById('mistake-list');
+  const entries = Object.entries(byMistake || {});
+  if (!entries.length) {
+    el.innerHTML = `<div class="loading">No mistakes logged yet — ${totalTrades} clean trade${totalTrades===1?'':'s'} so far 🎯</div>`;
+    return;
+  }
+  const sorted = entries.sort((a,b) => a[1].totalR - b[1].totalR); // most costly (lowest/most negative) first
+  const rows = sorted.map(([tag, v]) => {
+    const r = parseFloat(v.totalR.toFixed(1));
+    return `<div class="row-item">
+      <span class="row-name">${tag}</span>
+      <div class="row-stats">
+        <span class="row-stat ${r>=0?'up':'down'}">${r>=0?'+':''}${r}R</span>
+        <span class="row-stat">${v.count} trade${v.count===1?'':'s'}</span>
+      </div>
+    </div>`;
+  }).join('');
+  const cleanLine = `<div class="row-item" style="border-top:1px solid var(--border);margin-top:4px;padding-top:10px;">
+    <span class="row-name" style="color:var(--muted)">Clean trades (no mistakes tagged)</span>
+    <span class="row-stat">${cleanTrades} / ${totalTrades}</span>
+  </div>`;
+  el.innerHTML = rows + cleanLine;
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────

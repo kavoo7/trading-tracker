@@ -38,6 +38,17 @@ async function ensureSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+
+  // Migration: the table above already existed in production before the
+  // "mistakes" feature was added. CREATE TABLE IF NOT EXISTS only handles
+  // brand-new tables — it does nothing to a table that already exists with
+  // a different set of columns. ALTER TABLE ... ADD COLUMN IF NOT EXISTS
+  // is the safe way to evolve an existing table without losing data: it's
+  // a no-op if the column is already there, and adds it (defaulting every
+  // existing row to an empty array) if it's missing.
+  await sql`
+    ALTER TABLE trades ADD COLUMN IF NOT EXISTS mistakes TEXT[] NOT NULL DEFAULT '{}'
+  `;
 }
 
 // Shared CORS handling so the frontend (served from the same Vercel

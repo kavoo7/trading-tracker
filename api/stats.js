@@ -49,6 +49,23 @@ function computeStats(trades) {
     bump(byPair, t.pair, t);
   });
 
+  // Cost-by-mistake breakdown. A single trade can carry multiple mistake
+  // tags (e.g. both "Revenge trade" and "Moved SL"), so this is NOT a
+  // strict partition of total R the way byStrategy is — one trade's R can
+  // get counted under several mistake tags at once. That's intentional:
+  // the question this answers is "how much has each specific habit cost
+  // me," not "how do I split today's R into non-overlapping buckets."
+  const byMistake = {};
+  trades.forEach(t => {
+    const tags = Array.isArray(t.mistakes) ? t.mistakes : [];
+    tags.forEach(tag => {
+      if (!byMistake[tag]) byMistake[tag] = { count: 0, totalR: 0 };
+      byMistake[tag].count++;
+      byMistake[tag].totalR += num(t.pnl);
+    });
+  });
+  const cleanTrades = trades.filter(t => !Array.isArray(t.mistakes) || t.mistakes.length === 0).length;
+
   const sorted = [...trades].sort((a, b) => new Date(a.date) - new Date(b.date));
   let cum = 0;
   const equityCurve = sorted.map(t => ({
@@ -68,6 +85,6 @@ function computeStats(trades) {
     avgLoss: parseFloat(avgLoss.toFixed(2)),
     riskRewardRatio: parseFloat((avgLoss ? avgWin / avgLoss : 0).toFixed(2)),
     expectancy: parseFloat(((winRate / 100 * avgWin) - ((1 - winRate / 100) * avgLoss)).toFixed(2)),
-    byStrategy, bySession, byPair, equityCurve
+    byStrategy, bySession, byPair, byMistake, cleanTrades, equityCurve
   };
 }

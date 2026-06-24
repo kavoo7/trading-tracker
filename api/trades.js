@@ -36,19 +36,25 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { date, pair, dir, session, strategy, tf, entry, sl, tp, outcome, pnl, conf, notes } = req.body;
+      const { date, pair, dir, session, strategy, tf, entry, sl, tp, outcome, pnl, conf, notes, mistakes } = req.body;
 
       if (!date || !pair || !outcome) {
         return res.status(400).json({ success: false, message: 'date, pair, and outcome are required' });
       }
 
+      // mistakes arrives as a JS array (e.g. ["Revenge trade", "Moved SL"])
+      // from the frontend's checkbox group. Default to an empty array for
+      // clean trades — a trade having zero mistakes is the expected,
+      // good outcome, not a missing-data case.
+      const mistakeList = Array.isArray(mistakes) ? mistakes : [];
+
       const [trade] = await sql`
-        INSERT INTO trades (date, pair, dir, session, strategy, tf, entry, sl, tp, outcome, pnl, conf, notes)
+        INSERT INTO trades (date, pair, dir, session, strategy, tf, entry, sl, tp, outcome, pnl, conf, notes, mistakes)
         VALUES (
           ${date}, ${pair}, ${dir || 'Long'}, ${session || 'London'},
           ${strategy || 'Other'}, ${tf || '15M'},
           ${entry || null}, ${sl || null}, ${tp || null},
-          ${outcome}, ${pnl || 0}, ${conf || ''}, ${notes || ''}
+          ${outcome}, ${pnl || 0}, ${conf || ''}, ${notes || ''}, ${mistakeList}
         )
         RETURNING *
       `;
