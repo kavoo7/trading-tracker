@@ -102,6 +102,21 @@
     .checkbox-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-weight: 400; text-transform: none; letter-spacing: 0; cursor: pointer; padding: 6px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); }
     .checkbox-item:hover { border-color: rgba(239,68,68,0.3); }
     .checkbox-item input { width: auto; margin: 0; accent-color: var(--red); }
+
+    /* ── Summary page ── */
+    .summary-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 10px; }
+    .period-toggle { display: flex; gap: 6px; }
+    .period-toggle button { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: transparent; cursor: pointer; font-size: 12px; color: var(--muted); font-family: var(--font); }
+    .period-toggle button.active { background: rgba(245,200,66,0.1); color: var(--gold); border-color: rgba(245,200,66,0.3); }
+    .period-nav { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+    .period-nav button { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+    .period-nav button:hover { background: var(--card); }
+    .takeaway-card { background: linear-gradient(135deg, rgba(245,200,66,0.06), rgba(245,200,66,0.02)); border: 1px solid rgba(245,200,66,0.2); border-radius: 12px; padding: 16px 18px; margin-bottom: 1.25rem; font-size: 13px; line-height: 1.6; color: var(--text); }
+    .highlight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 1.25rem; }
+    .highlight-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+    .highlight-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .highlight-main { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+    .highlight-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
     .del-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 6px; border-radius: 4px; }
     .del-btn:hover { color: var(--red); background: rgba(239,68,68,0.08); }
 
@@ -180,6 +195,7 @@
     <button class="tab" onclick="showPage('log',this)">Trade Log</button>
     <button class="tab" onclick="showPage('add',this)">+ Add Trade</button>
     <button class="tab" onclick="showPage('analytics',this)">Analytics</button>
+    <button class="tab" onclick="showPage('summary',this)">Summary</button>
   </nav>
 
   <!-- ── DASHBOARD ── -->
@@ -334,6 +350,27 @@
     </div>
   </div>
 
+  <!-- ── SUMMARY ── -->
+  <div id="page-summary" class="page">
+    <div class="summary-header">
+      <div class="period-toggle">
+        <button class="active" id="period-week-btn" onclick="setSummaryPeriod('week')">Weekly</button>
+        <button id="period-month-btn" onclick="setSummaryPeriod('month')">Monthly</button>
+      </div>
+      <div class="period-nav">
+        <button onclick="shiftSummaryOffset(1)">‹ Prev</button>
+        <span id="summary-period-label">—</span>
+        <button onclick="shiftSummaryOffset(-1)" id="summary-next-btn">Next ›</button>
+      </div>
+    </div>
+
+    <div class="takeaway-card" id="summary-takeaway">
+      <span class="loading"><span class="spinner"></span>Loading summary...</span>
+    </div>
+
+    <div class="highlight-grid" id="summary-highlights"></div>
+  </div>
+
 </div>
 <div class="toast" id="toast"></div>
 
@@ -430,6 +467,7 @@ function showPage(p, btn) {
   if (p==='dashboard') loadDashboard();
   if (p==='log') loadTrades();
   if (p==='analytics') loadAnalytics();
+  if (p==='summary') loadSummary();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -684,6 +722,120 @@ function renderMistakeList(byMistake, cleanTrades, totalTrades) {
     <span class="row-stat">${cleanTrades} / ${totalTrades}</span>
   </div>`;
   el.innerHTML = rows + cleanLine;
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+// Local UI state for which period/offset is currently shown. Offset 0 =
+// current week/month, 1 = previous, etc. This state lives only in the
+// page (not persisted) — reopening the tab always starts back at "this
+// week" / "this month", which is the expected default each time.
+let summaryPeriod = 'week';
+let summaryOffset = 0;
+
+function setSummaryPeriod(period) {
+  summaryPeriod = period;
+  summaryOffset = 0;
+  document.getElementById('period-week-btn').classList.toggle('active', period === 'week');
+  document.getElementById('period-month-btn').classList.toggle('active', period === 'month');
+  loadSummary();
+}
+
+function shiftSummaryOffset(delta) {
+  // Offset can't go negative — that would mean "the future", which has no
+  // trades and isn't a meaningful thing to view.
+  summaryOffset = Math.max(0, summaryOffset + delta);
+  loadSummary();
+}
+
+async function loadSummary() {
+  const takeawayEl = document.getElementById('summary-takeaway');
+  const highlightsEl = document.getElementById('summary-highlights');
+  takeawayEl.innerHTML = '<span class="loading"><span class="spinner"></span>Loading summary...</span>';
+  highlightsEl.innerHTML = '';
+  // "Next" only makes sense once you've gone back at least one period —
+  // disable it at offset 0 so it's clear you're already at the present.
+  document.getElementById('summary-next-btn').disabled = (summaryOffset === 0);
+
+  try {
+    const r = await fetch(`${API}/summary?period=${summaryPeriod}&offset=${summaryOffset}`, { headers: authHeaders() });
+    const { summary, message } = await r.json();
+    if (!r.ok) throw new Error(message || `HTTP ${r.status}`);
+    renderSummary(summary);
+  } catch (err) {
+    console.error('loadSummary failed:', err);
+    takeawayEl.innerHTML = `⚠️ ${err.message}`;
+  }
+}
+
+function renderSummary(s) {
+  document.getElementById('summary-period-label').textContent = s.label;
+
+  if (!s.hasData) {
+    document.getElementById('summary-takeaway').innerHTML = `No trades logged for ${s.label}. Nothing to summarize yet.`;
+    document.getElementById('summary-highlights').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('summary-takeaway').innerHTML = `<strong style="color:var(--gold)">${s.label}</strong> — ${s.takeaway}`;
+
+  const cards = [];
+
+  cards.push(`
+    <div class="highlight-card">
+      <div class="highlight-label">Net Result</div>
+      <div class="highlight-main ${s.totalR>=0?'up':'down'}">${s.totalR>=0?'+':''}${s.totalR}R</div>
+      <div class="highlight-sub">${s.totalTrades} trades · ${s.winRate}% win rate</div>
+    </div>`);
+
+  cards.push(`
+    <div class="highlight-card">
+      <div class="highlight-label">Best Trade</div>
+      <div class="highlight-main up">+${s.bestTrade.pnl}R</div>
+      <div class="highlight-sub">${s.bestTrade.pair} · ${s.bestTrade.strategy} · ${s.bestTrade.date}</div>
+    </div>`);
+
+  cards.push(`
+    <div class="highlight-card">
+      <div class="highlight-label">Worst Trade</div>
+      <div class="highlight-main ${s.worstTrade.pnl<0?'down':''}">${s.worstTrade.pnl>=0?'+':''}${s.worstTrade.pnl}R</div>
+      <div class="highlight-sub">${s.worstTrade.pair} · ${s.worstTrade.strategy} · ${s.worstTrade.date}</div>
+    </div>`);
+
+  if (s.mostUsedStrategy) {
+    cards.push(`
+      <div class="highlight-card">
+        <div class="highlight-label">Most-Used Setup</div>
+        <div class="highlight-main">${s.mostUsedStrategy.name}</div>
+        <div class="highlight-sub">${s.mostUsedStrategy.count} trade${s.mostUsedStrategy.count===1?'':'s'}</div>
+      </div>`);
+  }
+
+  if (s.worstMistake) {
+    cards.push(`
+      <div class="highlight-card">
+        <div class="highlight-label">Most Costly Mistake</div>
+        <div class="highlight-main down">${s.worstMistake.tag}</div>
+        <div class="highlight-sub">${s.worstMistake.totalR}R across ${s.worstMistake.count} trade${s.worstMistake.count===1?'':'s'}</div>
+      </div>`);
+  } else {
+    cards.push(`
+      <div class="highlight-card">
+        <div class="highlight-label">Most Costly Mistake</div>
+        <div class="highlight-main up">None 🎯</div>
+        <div class="highlight-sub">${s.cleanTrades} clean trade${s.cleanTrades===1?'':'s'} this period</div>
+      </div>`);
+  }
+
+  if (s.bestSession) {
+    cards.push(`
+      <div class="highlight-card">
+        <div class="highlight-label">Best Session</div>
+        <div class="highlight-main ${s.bestSession.totalR>=0?'up':'down'}">${s.bestSession.name}</div>
+        <div class="highlight-sub">${s.bestSession.totalR>=0?'+':''}${s.bestSession.totalR}R</div>
+      </div>`);
+  }
+
+  document.getElementById('summary-highlights').innerHTML = cards.join('');
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
